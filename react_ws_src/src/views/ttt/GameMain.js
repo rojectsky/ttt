@@ -48,8 +48,8 @@ export default class SetName extends Component {
 //	------------------------	------------------------	------------------------
 
 	componentDidMount () {
-    	TweenMax.from('#game_stat', 1, {display: 'none', opacity: 0, scaleX:0, scaleY:0, ease: Power4.easeIn})
-    	TweenMax.from('#game_board', 1, {display: 'none', opacity: 0, x:-200, y:-200, scaleX:0, scaleY:0, ease: Power4.easeIn})
+		TweenMax.from('#game_stat', 1, {display: 'none', opacity: 0, scaleX:0, scaleY:0, ease: Power4.easeIn})
+		TweenMax.from('#game_board', 1, {display: 'none', opacity: 0, x:-200, y:-200, scaleX:0, scaleY:0, ease: Power4.easeIn})
 	}
 
 //	------------------------	------------------------	------------------------
@@ -59,24 +59,30 @@ export default class SetName extends Component {
 
 		this.socket = io(app.settings.ws_conf.loc.SOCKET__io.u);
 
-		this.socket.on('connect', function(data) { 
+		this.socket.on('connect', function(data) {
 			// console.log('socket connected', data)
 
 			this.socket.emit('new player', { name: app.settings.curr_user.name });
 
 		}.bind(this));
 
-		this.socket.on('pair_players', function(data) { 
+		this.socket.on('pair_players', function(data) {
 			// console.log('paired with ', data)
 
 			this.setState({
 				next_turn_ply: data.mode=='m',
 				game_play: true,
-				game_stat: 'Playing with ' + data.opp.name
+				game_stat: 'Playing with ' + data.opp.name,
+				opp_name: data.opp.name
 			})
 
 		}.bind(this));
 
+		this.socket.on('new_game', function() {
+
+			this.reset_game();
+
+		}.bind(this));
 
 		this.socket.on('opp_turn', this.turn_opp_live.bind(this));
 
@@ -98,9 +104,9 @@ export default class SetName extends Component {
 		const { cell_vals } = this.state
 
 		return (<div>
-		        	{cell_vals && cell_vals[c]=='x' && <i className="fa fa-times fa-5x"></i>}
-					{cell_vals && cell_vals[c]=='o' && <i className="fa fa-circle-o fa-5x"></i>}
-				</div>)
+			{cell_vals && cell_vals[c]=='x' && <i className="fa fa-times fa-5x"></i>}
+			{cell_vals && cell_vals[c]=='o' && <i className="fa fa-circle-o fa-5x"></i>}
+		</div>)
 	}
 
 //	------------------------	------------------------	------------------------
@@ -121,7 +127,7 @@ export default class SetName extends Component {
 
 				<div id="game_board">
 					<table>
-					<tbody>
+						<tbody>
 						<tr>
 							<td id='game_board-c1' ref='c1' onClick={this.click_cell.bind(this)}> {this.cell_cont('c1')} </td>
 							<td id='game_board-c2' ref='c2' onClick={this.click_cell.bind(this)} className="vbrd"> {this.cell_cont('c2')} </td>
@@ -137,11 +143,13 @@ export default class SetName extends Component {
 							<td id='game_board-c8' ref='c8' onClick={this.click_cell.bind(this)} className="vbrd"> {this.cell_cont('c8')} </td>
 							<td id='game_board-c9' ref='c9' onClick={this.click_cell.bind(this)}> {this.cell_cont('c9')} </td>
 						</tr>
-					</tbody>
+						</tbody>
 					</table>
 				</div>
 
 				<button type='submit' onClick={this.end_game.bind(this)} className='button'><span>End Game <span className='fa fa-caret-right'></span></span></button>
+
+				<button type='submit' onClick={this.new_game.bind(this)} className='button'><span>New Game <span className='fa fa-caret-right'></span></span></button>
 
 			</div>
 		)
@@ -197,11 +205,11 @@ export default class SetName extends Component {
 		let empty_cells_arr = []
 
 
-		for (let i=1; i<=9; i++) 
+		for (let i=1; i<=9; i++)
 			!cell_vals['c'+i] && empty_cells_arr.push('c'+i)
 		// console.log(cell_vals, empty_cells_arr, rand_arr_elem(empty_cells_arr))
 
-		const c = rand_arr_elem(empty_cells_arr)
+		const c = this.smart_move(cell_vals, empty_cells_arr)
 		cell_vals[c] = 'o'
 
 		TweenMax.from(this.refs[c], 0.7, {opacity: 0, scaleX:0, scaleY:0, ease: Power4.easeOut})
@@ -215,6 +223,24 @@ export default class SetName extends Component {
 		this.state.cell_vals = cell_vals
 
 		this.check_turn()
+	}
+
+	smart_move(cell_vals, empty_cells_arr) {
+
+		return this.win_move(cell_vals, 'o') || this.win_move(cell_vals, 'x') ||  rand_arr_elem(empty_cells_arr);
+	}
+
+	win_move(cell_vals, type) {
+		for (let set of this.win_sets) {
+			const winCells = [];
+			set.forEach(s => cell_vals[s] !== type && winCells.push(s));
+
+			if (winCells.length === 1) {
+				if (cell_vals[winCells[0]] === undefined) {
+					return winCells[0];
+				}
+			}
+		}
 	}
 
 
@@ -290,13 +316,13 @@ export default class SetName extends Component {
 		}
 
 
-		for (let i=1; i<=9; i++) 
+		for (let i=1; i<=9; i++)
 			!cell_vals['c'+i] && (fin = false)
 
 		// win && console.log('win set: ', set)
 
 		if (win) {
-		
+
 			this.refs[set[0]].classList.add('win')
 			this.refs[set[1]].classList.add('win')
 			this.refs[set[2]].classList.add('win')
@@ -309,16 +335,14 @@ export default class SetName extends Component {
 				game_play: false
 			})
 
-			this.socket && this.socket.disconnect();
 
 		} else if (fin) {
-		
+
 			this.setState({
 				game_stat: 'Draw',
 				game_play: false
 			})
 
-			this.socket && this.socket.disconnect();
 
 		} else {
 			this.props.game_type!='live' && this.state.next_turn_ply && setTimeout(this.turn_comp.bind(this), rand_to_fro(500, 1000));
@@ -327,7 +351,7 @@ export default class SetName extends Component {
 				next_turn_ply: !this.state.next_turn_ply
 			})
 		}
-		
+
 	}
 
 //	------------------------	------------------------	------------------------
@@ -339,5 +363,36 @@ export default class SetName extends Component {
 	}
 
 
+	new_game () {
+
+		if (this.state.game_stat.startsWith('Play')) {
+			alert('You cannot restart the game while it is playing...')
+			return ;
+		}
+
+		this.reset_game();
+		this.socket && this.socket.emit('new_game')
+	}
+
+	reset_game(){
+		let sets = ['c1','c2','c3','c4','c5','c6','c7','c8','c9']
+		sets.forEach(s=>this.refs[s].classList.remove('win'))
+
+		if(this.props.game_type !== 'live'){
+			this.setState({
+				cell_vals:{},
+				game_stat: 'Play',
+				game_play: true,
+				next_turn_ply: true,
+			})
+		}else{
+			this.setState({
+				cell_vals:{},
+				game_stat: 'Playing with '+ this.state.opp_name,
+				game_play: true,
+			})
+		}
+
+	}
 
 }
